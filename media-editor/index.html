@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Media Editor Demo — Moor</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{
+      background:#e0e0e0;min-height:100vh;
+      display:flex;flex-direction:column;align-items:center;
+      padding:24px 16px 48px;
+      font-family:-apple-system,BlinkMacSystemFont,'PingFang TC','Helvetica Neue',sans-serif;
+    }
+    .phone{
+      width:390px;height:820px;background:#111;
+      border-radius:44px;border:2px solid #2a2a2a;
+      overflow:hidden;position:relative;
+      box-shadow:0 32px 80px rgba(0,0,0,0.45);flex-shrink:0;
+    }
+    .screen{width:100%;height:100%;background:#f5f5f5;color:#111;display:flex;flex-direction:column;overflow:hidden;position:relative;}
+    .scroll{overflow-y:auto;overflow-x:hidden;}
+    .scroll::-webkit-scrollbar,::-webkit-scrollbar{display:none;}
+    input,textarea,button{outline:none;font-family:inherit;}
+    textarea{resize:none;}
+    input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:4px;background:#ddd;}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#111;cursor:pointer;}
+    .sheet-enter{animation:sheetUp 0.24s cubic-bezier(0.22,1,0.36,1);}
+    @keyframes sheetUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+    .fade-in{animation:fadeIn 0.15s ease;}
+    @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .tap:active{opacity:0.6;}
+    video{display:block;width:100%;height:100%;object-fit:cover;background:#ddd;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useEffect,useCallback} = React;
+
+/* ── Tokens ── */
+const T={
+  bg:'#f5f5f5',sur:'#ffffff',bor:'#e0e0e0',
+  txt:'#111111',sub:'#666666',hint:'#aaaaaa',div:'#ebebeb',
+  cta:'#111111',ctaT:'#ffffff',
+  danger:'#c62828',warn:'#b45309',
+};
+
+/* ── Mock data ── */
+const VODS=[
+  {id:1,title:'週三晚間直播',   start:'2026/03/25 21:04',shows:2,daysLeft:13},
+  {id:2,title:'限定表演場',     start:'2026/03/18 19:30',shows:1,daysLeft:6},
+  {id:3,title:'週末下午特別場', start:'2026/03/14 15:00',shows:3,daysLeft:2},
+];
+const MUSIC=[
+  {id:1,title:'輕快節奏 Vol.1',dur:'2:34'},
+  {id:2,title:'抒情旋律',      dur:'3:12'},
+  {id:3,title:'電子氛圍',      dur:'2:58'},
+  {id:4,title:'動感節拍',      dur:'3:45'},
+  {id:5,title:'古典鋼琴',      dur:'4:02'},
+];
+const FILTERS =['原始','暖調','冷調','鮮豔','褪色','黑白'];
+const STICKERS=['心形','星形','閃光','鑽石','皇冠','彩帶','音符','火焰','笑臉','箭頭'];
+const SPEEDS  =['0.5x','0.75x','1x','1.25x','1.5x','2x'];
+const DIAMONDS=[0,100,300,500,1000,2000,3000,5000,6000];
+const VID='https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+
+/* ── Heatmap ── */
+const HMAP=(()=>{
+  const d=[];
+  for(let i=0;i<120;i++){
+    let v=Math.random()*0.1;
+    if(i>=15&&i<=22)v+=0.55*Math.sin((i-15)/7*Math.PI);
+    if(i>=38&&i<=52)v+=0.92*Math.sin((i-38)/14*Math.PI);
+    if(i>=63&&i<=74)v+=0.65*Math.sin((i-63)/11*Math.PI);
+    if(i>=87&&i<=101)v+=0.80*Math.sin((i-87)/14*Math.PI);
+    if(i>=108&&i<=116)v+=0.42*Math.sin((i-108)/8*Math.PI);
+    d.push(Math.min(1,Math.max(0.05,v)));
+  }
+  return d;
+})();
+
+const fmt=m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const peakInWindow=pos=>pos+HMAP.slice(pos,pos+10).reduce((mi,v,i,a)=>v>a[mi]?i:mi,0);
+
+/* ── Reusable atoms ── */
+const StatusBar=()=>(
+  <div style={{height:44,display:'flex',alignItems:'center',justifyContent:'space-between',
+               padding:'0 20px',background:T.sur,borderBottom:`1px solid ${T.bor}`,flexShrink:0}}>
+    <span style={{fontSize:13,fontWeight:600}}>10:56</span>
+    <span style={{fontSize:12,color:T.sub}}>4G &nbsp; 94%</span>
+  </div>
+);
+
+const Header=({title,onBack,right})=>(
+  <div style={{background:T.sur,borderBottom:`1px solid ${T.bor}`,
+               padding:'10px 16px',display:'flex',alignItems:'center',
+               justifyContent:'space-between',flexShrink:0}}>
+    <button onClick={onBack} className="tap"
+      style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:T.sub,
+              padding:'4px 8px 4px 0',minWidth:52}}>← 返回</button>
+    <span style={{fontSize:16,fontWeight:700}}>{title}</span>
+    <div style={{minWidth:52,textAlign:'right'}}>{right}</div>
+  </div>
+);
+
+const BottomNav=({onPlus})=>{
+  const items=[{l:'數據分析'},{l:'聊天'},{plus:true},{l:'活動'},{l:'個人中心',active:true}];
+  return(
+    <div style={{background:T.sur,borderTop:`1px solid ${T.bor}`,
+                 padding:'8px 0 24px',display:'flex',justifyContent:'space-around',
+                 alignItems:'center',flexShrink:0}}>
+      {items.map((it,i)=>(
+        <div key={i} onClick={it.plus?onPlus:undefined}
+          style={{display:'flex',flexDirection:'column',alignItems:'center',
+                  minWidth:56,cursor:it.plus?'pointer':'default',gap:3}}>
+          {it.plus
+            ?<div style={{width:44,height:44,borderRadius:12,background:T.txt,
+                          display:'flex',alignItems:'center',justifyContent:'center',
+                          color:'#fff',fontSize:24,fontWeight:300}}>+</div>
+            :<>
+              <div style={{width:22,height:22,borderRadius:4,background:T.bor,
+                           border:`1.5px solid ${it.active?T.txt:T.bor}`}}/>
+              <span style={{fontSize:10,color:it.active?T.txt:T.hint,
+                            fontWeight:it.active?600:400}}>{it.l}</span>
+            </>}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const Dialog=({title,msg,confirmLabel='確定',danger=false,onConfirm,onCancel})=>(
+  <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.45)',
+               display:'flex',alignItems:'center',justifyContent:'center',zIndex:300}}
+       className="fade-in">
+    <div style={{background:T.sur,borderRadius:16,padding:'24px 20px',
+                 margin:'0 28px',width:'100%',border:`1px solid ${T.bor}`,
+                 boxShadow:'0 8px 32px rgba(0,0,0,0.1)'}}>
+      <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>{title}</div>
+      <div style={{fontSize:13,color:T.sub,marginBottom:24,lineHeight:1.7}}>{msg}</div>
+      <div style={{display:'flex',gap:10}}>
+        <button onClick={onCancel} className="tap"
+          style={{flex:1,padding:'11px',borderRadius:10,background:T.bg,
+                  border:`1px solid ${T.bor}`,color:T.txt,fontSize:14,cursor:'pointer'}}>取消</button>
+        <button onClick={onConfirm} className="tap"
+          style={{flex:1,padding:'11px',borderRadius:10,
+                  background:danger?T.danger:T.cta,color:T.ctaT,
+                  fontSize:14,fontWeight:700,border:'none',cursor:'pointer'}}>{confirmLabel}</button>
+      </div>
+    </div>
+  </div>
+);
+
+/* Wireframe thumbnail placeholder */
+const ImgPlaceholder=({w,h,radius=8})=>(
+  <div style={{width:w,height:h,borderRadius:radius,background:'#e4e4e4',
+               border:`1px solid ${T.bor}`,flexShrink:0,position:'relative',overflow:'hidden'}}>
+    <svg style={{position:'absolute',inset:0,width:'100%',height:'100%',opacity:0.25}}>
+      <line x1="0" y1="0" x2="100%" y2="100%" stroke="#999" strokeWidth="1.5"/>
+      <line x1="100%" y1="0" x2="0" y2="100%" stroke="#999" strokeWidth="1.5"/>
+    </svg>
+  </div>
+);
+
+/* Section label */
+const SLabel=({label,note,required})=>(
+  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',
+               marginBottom:8,marginTop:20}}>
+    <span style={{fontSize:13,fontWeight:600,color:T.txt}}>
+      {label}{required&&<span style={{color:T.danger,marginLeft:2}}>*</span>}
+    </span>
+    {note&&<span style={{fontSize:11,color:T.hint}}>{note}</span>}
+  </div>
+);
+
+/* ── Create Menu Sheet ── */
+const CreateMenu=({onClose,onAction})=>(
+  <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.4)',
+               display:'flex',alignItems:'flex-end',zIndex:200}} className="fade-in"
+       onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="sheet-enter"
+      style={{background:T.sur,borderRadius:'20px 20px 0 0',width:'100%',
+              paddingBottom:32,border:`1px solid ${T.bor}`}}>
+      <div style={{display:'flex',justifyContent:'center',padding:'12px 0 4px'}}>
+        <div style={{width:36,height:4,borderRadius:2,background:T.bor}}/>
+      </div>
+      <div style={{padding:'4px 16px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{fontSize:16,fontWeight:700}}>建立</span>
+        <button onClick={onClose} className="tap"
+          style={{background:'none',border:'none',fontSize:18,color:T.hint,cursor:'pointer'}}>✕</button>
+      </div>
+      {/* Highlighted new item */}
+      <div onClick={onAction} className="tap"
+        style={{margin:'12px 16px 0',padding:'14px 16px',borderRadius:12,
+                background:T.txt,cursor:'pointer',display:'flex',alignItems:'center',gap:14}}>
+        <div style={{width:40,height:40,borderRadius:10,background:'rgba(255,255,255,0.12)',
+                     border:'1px solid rgba(255,255,255,0.2)',flexShrink:0,
+                     display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{width:16,height:12,border:'2px solid rgba(255,255,255,0.8)',borderRadius:2}}/>
+        </div>
+        <div>
+          <div style={{fontSize:15,fontWeight:600,color:'#fff'}}>上傳直播精華</div>
+          <div style={{fontSize:12,color:'rgba(255,255,255,0.55)',marginTop:2}}>
+            剪輯直播 VOD 並上架付費影片
+          </div>
+        </div>
+      </div>
+      {/* Other items */}
+      {[['直播','在線上直播'],['短動態','新增限時短影片、照片'],['貼文','發布一般貼文']].map(([t,d])=>(
+        <div key={t} style={{margin:'1px 16px 0',padding:'14px 16px',
+                              display:'flex',alignItems:'center',gap:14,opacity:0.3}}>
+          <div style={{width:40,height:40,borderRadius:10,background:T.bg,
+                       border:`1px solid ${T.bor}`,flexShrink:0}}/>
+          <div>
+            <div style={{fontSize:15,fontWeight:500}}>{t}</div>
+            <div style={{fontSize:12,color:T.sub,marginTop:2}}>{d}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+/* ── VOD Picker Sheet ── */
+const VodPickerSheet=({onClose,onSelect})=>{
+  const dc=d=>d<=2?T.danger:d<=4?T.warn:T.hint;
+  return(
+    <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.4)',
+                 display:'flex',alignItems:'flex-end',zIndex:200}} className="fade-in"
+         onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="sheet-enter"
+        style={{background:T.bg,borderRadius:'20px 20px 0 0',width:'100%',
+                maxHeight:'82%',display:'flex',flexDirection:'column'}}>
+        <div style={{padding:'12px 16px 0',display:'flex',justifyContent:'center'}}>
+          <div style={{width:36,height:4,borderRadius:2,background:T.bor}}/>
+        </div>
+        <div style={{padding:'8px 16px 10px',display:'flex',justifyContent:'space-between',
+                     alignItems:'center',borderBottom:`1px solid ${T.bor}`,background:T.sur}}>
+          <span style={{fontSize:16,fontWeight:700}}>選擇直播場次</span>
+          <button onClick={onClose} className="tap"
+            style={{background:'none',border:'none',fontSize:13,color:T.sub,cursor:'pointer'}}>取消</button>
+        </div>
+        <div className="scroll" style={{flex:1,padding:'12px 16px 24px'}}>
+          <div style={{fontSize:12,color:T.hint,marginBottom:12}}>
+            直播 VOD 保存 14 天，請及時完成剪輯
+          </div>
+          {VODS.map(v=>(
+            <div key={v.id} onClick={()=>onSelect(v)} className="tap"
+              style={{background:T.sur,borderRadius:12,marginBottom:10,
+                      border:`1px solid ${T.bor}`,overflow:'hidden',cursor:'pointer'}}>
+              {/* Thumbnail */}
+              <div style={{height:110,background:'#e0e0e0',position:'relative',overflow:'hidden'}}>
+                <svg style={{position:'absolute',inset:0,width:'100%',height:'100%',opacity:0.2}}>
+                  <line x1="0" y1="0" x2="100%" y2="100%" stroke="#999" strokeWidth="1.5"/>
+                  <line x1="100%" y1="0" x2="0" y2="100%" stroke="#999" strokeWidth="1.5"/>
+                </svg>
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <div style={{width:34,height:34,borderRadius:'50%',background:'rgba(0,0,0,0.12)',
+                               display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    <div style={{width:0,height:0,borderTop:'7px solid transparent',
+                                 borderBottom:'7px solid transparent',
+                                 borderLeft:'12px solid rgba(0,0,0,0.3)',marginLeft:3}}/>
+                  </div>
+                </div>
+                {v.daysLeft<=3&&(
+                  <div style={{position:'absolute',top:8,left:8,background:T.danger,
+                               borderRadius:4,padding:'2px 7px',fontSize:10,color:'#fff',fontWeight:600}}>
+                    {v.daysLeft} 天後到期
+                  </div>
+                )}
+              </div>
+              {/* Info */}
+              <div style={{padding:'10px 14px 12px'}}>
+                <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{v.title}</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:12,color:T.sub}}>{v.start}</span>
+                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                    <span style={{fontSize:11,background:T.bg,border:`1px solid ${T.bor}`,
+                                  borderRadius:20,padding:'2px 8px',color:T.sub}}>
+                      表演秀 {v.shows} 場
+                    </span>
+                    <span style={{fontSize:11,color:dc(v.daysLeft),fontWeight:v.daysLeft<=3?600:400}}>
+                      剩 {v.daysLeft} 天
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── Personal Center ── */
+const PersonalCenter=({onPlus})=>(
+  <div className="screen">
+    <StatusBar/>
+    <div className="scroll" style={{flex:1}}>
+      <div style={{background:T.sur,padding:'12px 16px 16px',borderBottom:`1px solid ${T.bor}`}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <span style={{fontSize:20,fontWeight:700}}>謀豆aaa</span>
+          <div style={{display:'flex',gap:16}}>
+            <span style={{fontSize:13,color:T.sub}}>通知</span>
+            <span style={{fontSize:13,color:T.sub}}>設定</span>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:16,alignItems:'center',marginBottom:14}}>
+          <div style={{width:68,height:68,borderRadius:'50%',background:'#ddd',
+                       border:`1px solid ${T.bor}`,flexShrink:0}}/>
+          <div style={{display:'flex',gap:20}}>
+            {[['1','追蹤數'],['4','粉絲數'],['--','獎金']].map(([v,l])=>(
+              <div key={l} style={{textAlign:'center'}}>
+                <div style={{fontSize:17,fontWeight:700}}>{v}</div>
+                <div style={{fontSize:11,color:T.sub,marginTop:2}}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,marginBottom:12}}>
+          {['錄製自動訊息','推薦計劃'].map(b=>(
+            <button key={b} style={{flex:1,padding:'9px',borderRadius:8,background:T.bg,
+                                    border:`1px solid ${T.bor}`,color:T.txt,fontSize:12,cursor:'pointer'}}>{b}</button>
+          ))}
+        </div>
+        <div style={{fontSize:12,color:T.sub,marginBottom:3}}>@finefire8703</div>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:3}}>鑽石 18,053</div>
+        <div style={{display:'inline-block',border:`1px solid ${T.bor}`,borderRadius:20,
+                     padding:'2px 10px',fontSize:11,color:T.sub}}>台灣</div>
+      </div>
+      <div style={{background:T.sur,borderBottom:`1px solid ${T.bor}`,
+                   padding:'10px 16px',display:'flex',gap:8}}>
+        {['編輯個人檔案','直播時段'].map(b=>(
+          <button key={b} style={{flex:1,padding:'10px',borderRadius:8,background:T.bg,
+                                   border:`1px solid ${T.bor}`,color:T.txt,fontSize:13,cursor:'pointer'}}>{b}</button>
+        ))}
+      </div>
+      <div style={{background:T.sur,display:'flex',borderBottom:`1px solid ${T.bor}`}}>
+        {['已發布','待發布'].map((t,i)=>(
+          <div key={t} style={{flex:1,textAlign:'center',padding:'10px',fontSize:13,
+                                color:i===0?T.txt:T.hint,fontWeight:i===0?600:400,
+                                borderBottom:i===0?`2px solid ${T.txt}`:'none'}}>{t}</div>
+        ))}
+      </div>
+      <div style={{background:T.sur,display:'flex',overflowX:'auto',borderBottom:`1px solid ${T.bor}`}}>
+        {['首頁','限時動態','影片','短影音','照片'].map((t,i)=>(
+          <div key={t} style={{padding:'8px 16px',fontSize:12,whiteSpace:'nowrap',
+                                color:i===2?T.txt:T.hint,fontWeight:i===2?600:400,
+                                borderBottom:i===2?`2px solid ${T.txt}`:'none'}}>{t}</div>
+        ))}
+      </div>
+      <div style={{padding:'48px 16px',textAlign:'center',color:T.hint,fontSize:13}}>
+        尚無影片內容
+      </div>
+    </div>
+    <BottomNav onPlus={onPlus}/>
+  </div>
+);
+
+/* ── Post Settings (anchor page) ── */
+const PostSettings=({go,clipData,setClipData,setVod,winPos,setWinPos})=>{
+  const [title,setTitle]=useState('');
+  const [desc,setDesc]=useState('');
+  const [diamonds,setDiamonds]=useState(500);
+  const [showPicker,setShowPicker]=useState(false);
+  const [showClear,setShowClear]=useState(false);
+  const [showVideoPreview,setShowVideoPreview]=useState(false);
+  const [showPreviewVideo,setShowPreviewVideo]=useState(false);
+
+  const peakMin=clipData?peakInWindow(clipData.winPos):null;
+
+  const handleSelectVod=v=>{
+    setVod(v);
+    setShowPicker(false);
+    go('clip_select');
+  };
+
+  const handleClearClip=()=>{
+    setClipData(null);
+    setShowClear(false);
+    setShowPicker(true);
+  };
+
+  return(
+    <div className="screen">
+      <StatusBar/>
+      <Header title="上架直播精華" onBack={()=>go('personal_center')}/>
+      <div className="scroll" style={{flex:1,padding:'4px 16px 100px'}}>
+
+        {/* ── 直播片段 ── */}
+        <SLabel label="直播片段" required/>
+        {!clipData?(
+          /* Empty state */
+          <div onClick={()=>setShowPicker(true)} className="tap"
+            style={{background:T.sur,borderRadius:12,border:`1.5px dashed ${T.bor}`,
+                   padding:'20px',cursor:'pointer',display:'flex',alignItems:'center',gap:14}}>
+            <div style={{width:48,height:48,borderRadius:10,background:T.bg,border:`1px solid ${T.bor}`,
+                         flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <div style={{width:18,height:14,border:`2px solid ${T.hint}`,borderRadius:2}}/>
+            </div>
+            <div>
+              <div style={{fontSize:14,fontWeight:500,marginBottom:3}}>選擇直播場次</div>
+              <div style={{fontSize:12,color:T.hint}}>點擊選擇一場直播 VOD</div>
+            </div>
+          </div>
+        ):(
+          /* Filled: preview + modify */
+          <div style={{background:T.sur,borderRadius:12,border:`1px solid ${T.bor}`,overflow:'hidden'}}>
+            {/* Video preview */}
+            <div style={{position:'relative',background:'#1a1a1a',aspectRatio:'16/9',cursor:'pointer'}}
+                 onClick={()=>setShowVideoPreview(v=>!v)}>
+              {showVideoPreview?(
+                <video src={VID} controls autoPlay playsInline
+                  style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+              ):(
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',
+                             justifyContent:'center',flexDirection:'column',gap:8}}>
+                  <div style={{width:40,height:40,borderRadius:'50%',background:'rgba(255,255,255,0.15)',
+                               display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    <div style={{width:0,height:0,borderTop:'9px solid transparent',
+                                 borderBottom:'9px solid transparent',
+                                 borderLeft:'16px solid rgba(255,255,255,0.8)',marginLeft:3}}/>
+                  </div>
+                  <span style={{fontSize:11,color:'rgba(255,255,255,0.6)'}}>點擊預覽影片</span>
+                </div>
+              )}
+            </div>
+            {/* Info row */}
+            <div style={{padding:'10px 14px',display:'flex',justifyContent:'space-between',
+                         alignItems:'flex-start'}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:600,marginBottom:3}}>{clipData.vod.title}</div>
+                <div style={{fontSize:12,color:T.sub,marginBottom:2}}>{clipData.vod.start}</div>
+                <div style={{display:'flex',gap:6}}>
+                  <span style={{fontSize:11,background:T.bg,border:`1px solid ${T.bor}`,
+                                borderRadius:20,padding:'2px 8px',color:T.sub}}>
+                    {fmt(clipData.winPos)} — {fmt(clipData.winPos+10)}
+                  </span>
+                  <span style={{fontSize:11,background:T.bg,border:`1px solid ${T.bor}`,
+                                borderRadius:20,padding:'2px 8px',color:T.sub}}>10 分鐘</span>
+                </div>
+              </div>
+              <button onClick={()=>setShowClear(true)} className="tap"
+                style={{background:'none',border:`1px solid ${T.bor}`,borderRadius:8,
+                        padding:'6px 10px',fontSize:12,color:T.sub,cursor:'pointer',flexShrink:0}}>
+                修改
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── 預覽片段 ── */}
+        <SLabel label="預覽片段（15 秒）" note="REWH 自動選取"/>
+        {!clipData?(
+          <div style={{background:T.sur,borderRadius:12,border:`1px solid ${T.bor}`,
+                       padding:'16px',textAlign:'center',color:T.hint,fontSize:12,
+                       opacity:0.5}}>
+            完成直播片段選取後自動填入
+          </div>
+        ):(
+          <div style={{background:T.sur,borderRadius:12,border:`1px solid ${T.bor}`,overflow:'hidden'}}>
+            {/* Preview video */}
+            <div style={{position:'relative',background:'#1a1a1a',aspectRatio:'16/9',cursor:'pointer'}}
+                 onClick={()=>setShowPreviewVideo(v=>!v)}>
+              {showPreviewVideo?(
+                <video src={VID} controls autoPlay playsInline
+                  style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+              ):(
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',
+                             justifyContent:'center',flexDirection:'column',gap:8}}>
+                  <div style={{width:40,height:40,borderRadius:'50%',background:'rgba(255,255,255,0.15)',
+                               display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    <div style={{width:0,height:0,borderTop:'9px solid transparent',
+                                 borderBottom:'9px solid transparent',
+                                 borderLeft:'16px solid rgba(255,255,255,0.8)',marginLeft:3}}/>
+                  </div>
+                  <span style={{fontSize:11,color:'rgba(255,255,255,0.6)'}}>點擊預覽片段</span>
+                </div>
+              )}
+            </div>
+            <div style={{padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:500,marginBottom:2}}>
+                  系統自動選取 · {fmt(peakMin)} — {fmt(peakMin)}（約 15 秒）
+                </div>
+                <div style={{fontSize:11,color:T.hint}}>根據 REWH 最高時刻自動選取</div>
+              </div>
+              <button onClick={()=>go('preview_select')} className="tap"
+                style={{background:'none',border:`1px solid ${T.bor}`,borderRadius:8,
+                        padding:'6px 10px',fontSize:12,color:T.sub,cursor:'pointer',flexShrink:0}}>
+                修改
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── 標題 ── */}
+        <SLabel label="標題" required/>
+        <input value={title} onChange={e=>setTitle(e.target.value.slice(0,50))}
+          placeholder="為這段精華取個吸引人的標題…"
+          style={{width:'100%',background:T.sur,border:`1px solid ${title?T.txt:T.bor}`,
+                  borderRadius:10,padding:'12px',color:T.txt,fontSize:14}}/>
+        <div style={{textAlign:'right',fontSize:11,color:T.hint,marginTop:4}}>{title.length}/50</div>
+
+        {/* ── 描述 ── */}
+        <SLabel label="描述"/>
+        <textarea value={desc} onChange={e=>setDesc(e.target.value)}
+          placeholder="描述這段精華的內容，吸引用戶解鎖觀看…" rows={3}
+          style={{width:'100%',background:T.sur,border:`1px solid ${T.bor}`,
+                  borderRadius:10,padding:'12px',color:T.txt,fontSize:14}}/>
+
+        {/* ── 解鎖鑽石 ── */}
+        <SLabel label="解鎖鑽石數量" required/>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:8}}>
+          {DIAMONDS.map(d=>(
+            <button key={d} onClick={()=>setDiamonds(d)} className="tap"
+              style={{padding:'8px 12px',borderRadius:10,fontSize:13,cursor:'pointer',
+                      background:diamonds===d?T.cta:T.sur,
+                      color:diamonds===d?T.ctaT:T.txt,
+                      border:`1.5px solid ${diamonds===d?T.cta:T.bor}`,
+                      fontWeight:diamonds===d?700:400}}>
+              {d===0?'免費':`${d.toLocaleString()} 鑽`}
+            </button>
+          ))}
+        </div>
+        {diamonds>0&&<div style={{fontSize:11,color:T.hint,marginBottom:4}}>
+          用戶需花費 {diamonds.toLocaleString()} 鑽石解鎖完整影片
+        </div>}
+
+        {/* ── Notice ── */}
+        <div style={{background:'#fff8e1',borderRadius:10,padding:'10px 12px',
+                     marginTop:16,marginBottom:20,border:'1px solid #ffe082'}}>
+          <div style={{fontSize:12,color:'#7a5c00',lineHeight:1.7}}>
+            注意：上架後無法修改任何內容，包含售價。已解鎖的用戶在貼文刪除後仍保有永久觀看權。
+          </div>
+        </div>
+
+        {/* ── Submit ── */}
+        <button onClick={()=>clipData&&title&&go('uploading')} className="tap"
+          style={{width:'100%',padding:'14px',borderRadius:12,fontSize:16,fontWeight:700,
+                  background:clipData&&title?T.cta:T.bg,
+                  border:`1px solid ${clipData&&title?T.cta:T.bor}`,
+                  color:clipData&&title?T.ctaT:T.hint,
+                  cursor:clipData&&title?'pointer':'default'}}>
+          上架貼文
+        </button>
+        {(!clipData||!title)&&(
+          <div style={{textAlign:'center',fontSize:11,color:T.hint,marginTop:8}}>
+            {!clipData?'請先選擇直播片段':!title?'請填寫標題':''}
+          </div>
+        )}
+      </div>
+
+      {/* VOD picker sheet */}
+      {showPicker&&(
+        <VodPickerSheet onClose={()=>setShowPicker(false)} onSelect={handleSelectVod}/>
+      )}
+
+      {/* Clear confirm dialog */}
+      {showClear&&(
+        <Dialog title="重新選取片段？"
+          msg="目前設定的直播片段與預覽片段將會清除，是否確定重新選取？"
+          confirmLabel="確定重新選取" danger
+          onConfirm={handleClearClip}
+          onCancel={()=>setShowClear(false)}/>
+      )}
+    </div>
+  );
+};
+
+/* ── Preview Select (manual override) ── */
+const PreviewSelect=({go,clipData})=>{
+  const [pos,setPos]=useState(0);
+  const tlRef=useRef(null);
+  const drag=useRef({on:false,sx:0,sp:0});
+  const W=10; // represents ~15s as fraction of clip
+
+  const startDrag=e=>{drag.current={on:true,sx:e.clientX??e.touches?.[0]?.clientX,sp:pos};e.preventDefault();};
+  const moveDrag=useCallback(e=>{
+    if(!drag.current.on||!tlRef.current)return;
+    const x=e.clientX??e.touches?.[0]?.clientX;
+    const w=tlRef.current.getBoundingClientRect().width;
+    const d=((x-drag.current.sx)/w)*100;
+    setPos(Math.round(Math.max(0,Math.min(100-W,drag.current.sp+d))));
+  },[]);
+  const endDrag=()=>{drag.current.on=false;};
+
+  useEffect(()=>{
+    window.addEventListener('mousemove',moveDrag);
+    window.addEventListener('mouseup',endDrag);
+    window.addEventListener('touchmove',moveDrag,{passive:false});
+    window.addEventListener('touchend',endDrag);
+    return()=>{
+      window.removeEventListener('mousemove',moveDrag);
+      window.removeEventListener('mouseup',endDrag);
+      window.removeEventListener('touchmove',moveDrag);
+      window.removeEventListener('touchend',endDrag);
+    };
+  },[moveDrag]);
+
+  return(
+    <div className="screen">
+      <StatusBar/>
+      <Header title="調整預覽片段" onBack={()=>go('post_settings')}/>
+      <div className="scroll" style={{flex:1,padding:'16px 16px 40px'}}>
+        <div style={{fontSize:13,color:T.sub,marginBottom:16,lineHeight:1.6}}>
+          拖曳選取 15 秒的預覽片段，或點擊下方使用系統自動選取。
+        </div>
+        {/* Video strip */}
+        <div style={{borderRadius:10,overflow:'hidden',marginBottom:12,
+                     background:'#1a1a1a',position:'relative',height:80,cursor:'grab'}}
+             ref={tlRef} onMouseDown={startDrag} onTouchStart={startDrag}>
+          <video src={VID} style={{width:'100%',height:'100%',objectFit:'cover',opacity:0.55}} muted/>
+          {/* Window */}
+          <div style={{position:'absolute',top:0,bottom:0,left:`${pos}%`,width:`${W}%`,
+                       border:'2px solid #fff',borderRadius:4,background:'rgba(255,255,255,0.12)',
+                       display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <span style={{fontSize:9,color:'#fff',fontWeight:600}}>15秒</span>
+          </div>
+        </div>
+        <div style={{background:T.sur,borderRadius:10,border:`1px solid ${T.bor}`,
+                     padding:'10px 12px',marginBottom:20}}>
+          <div style={{fontSize:12,color:T.sub}}>拖曳白框選取預覽位置</div>
+        </div>
+        <button onClick={()=>go('post_settings')} className="tap"
+          style={{width:'100%',padding:'13px',borderRadius:12,background:T.cta,color:T.ctaT,
+                  fontSize:15,fontWeight:700,border:'none',cursor:'pointer',marginBottom:10}}>
+          確認選取
+        </button>
+        <button onClick={()=>go('post_settings')} className="tap"
+          style={{width:'100%',padding:'13px',borderRadius:12,background:T.sur,color:T.sub,
+                  fontSize:14,border:`1px solid ${T.bor}`,cursor:'pointer'}}>
+          使用系統自動選取
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/* ── Clip Select ── */
+const ClipSelect=({go,vod,winPos,setWinPos,setClipData})=>{
+  const tlRef=useRef(null);
+  const drag=useRef({on:false,sx:0,sp:0});
+
+  const startDrag=e=>{drag.current={on:true,sx:e.clientX??e.touches?.[0]?.clientX,sp:winPos};e.preventDefault();};
+  const moveDrag=useCallback(e=>{
+    if(!drag.current.on||!tlRef.current)return;
+    const x=e.clientX??e.touches?.[0]?.clientX;
+    const w=tlRef.current.getBoundingClientRect().width;
+    const d=((x-drag.current.sx)/w)*120;
+    setWinPos(Math.round(Math.max(0,Math.min(110,drag.current.sp+d))));
+  },[]);
+  const endDrag=()=>{drag.current.on=false;};
+
+  useEffect(()=>{
+    window.addEventListener('mousemove',moveDrag);
+    window.addEventListener('mouseup',endDrag);
+    window.addEventListener('touchmove',moveDrag,{passive:false});
+    window.addEventListener('touchend',endDrag);
+    return()=>{
+      window.removeEventListener('mousemove',moveDrag);
+      window.removeEventListener('mouseup',endDrag);
+      window.removeEventListener('touchmove',moveDrag);
+      window.removeEventListener('touchend',endDrag);
+    };
+  },[moveDrag]);
+
+  const peak=peakInWindow(winPos);
+
+  return(
+    <div className="screen">
+      <StatusBar/>
+      <Header title="選取片段" onBack={()=>go('post_settings')}
+        right={<span style={{fontSize:12,color:T.sub}}>{vod?.title}</span>}/>
+      <div className="scroll" style={{flex:1}}>
+        {/* Video */}
+        <div style={{background:'#1a1a1a',aspectRatio:'16/9',flexShrink:0,overflow:'hidden'}}>
+          <video src={VID} controls playsInline
+            style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+        </div>
+        <div style={{padding:'14px 16px'}}>
+          <div style={{fontSize:12,color:T.sub,marginBottom:4}}>{vod?.start}</div>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}>
+            <span style={{fontSize:12,color:T.sub,fontWeight:500}}>REWH 高光時刻</span>
+            <span style={{fontSize:11,color:T.hint}}>拖曳視窗選取 10 分鐘片段</span>
+          </div>
+
+          {/* Heatmap */}
+          <div ref={tlRef} style={{position:'relative',marginBottom:6,userSelect:'none'}}>
+            <div style={{display:'flex',alignItems:'flex-end',height:64,gap:'1px',
+                         background:T.sur,borderRadius:8,padding:'5px 3px 3px',
+                         border:`1px solid ${T.bor}`,overflow:'hidden'}}>
+              {HMAP.map((v,i)=>{
+                const inW=i>=winPos&&i<winPos+10;
+                const g=Math.round(inW?(40+v*180):(220-v*80));
+                return(
+                  <div key={i} style={{flex:1,borderRadius:1,minWidth:1,
+                                       height:`${Math.max(8,v*100)}%`,
+                                       background:`rgb(${g},${g},${g})`}}/>
+                );
+              })}
+            </div>
+            <div onMouseDown={startDrag} onTouchStart={startDrag}
+              style={{position:'absolute',top:0,bottom:0,
+                      left:`${(winPos/120)*100}%`,width:`${(10/120)*100}%`,
+                      border:`2px solid ${T.txt}`,borderRadius:8,
+                      background:'rgba(0,0,0,0.05)',cursor:'grab',touchAction:'none'}}>
+              <div style={{position:'absolute',top:'50%',left:3,transform:'translateY(-50%)',
+                           width:2,height:18,background:T.txt,borderRadius:1}}/>
+              <div style={{position:'absolute',top:'50%',right:3,transform:'translateY(-50%)',
+                           width:2,height:18,background:T.txt,borderRadius:1}}/>
+            </div>
+          </div>
+
+          {/* Time axis */}
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:14}}>
+            {['00:00','00:30','01:00','01:30','02:00'].map(t=>(
+              <span key={t} style={{fontSize:9,color:T.hint}}>{t}</span>
+            ))}
+          </div>
+
+          {/* Selected range */}
+          <div style={{background:T.sur,borderRadius:12,border:`1px solid ${T.bor}`,
+                       padding:'12px 14px',marginBottom:12}}>
+            <div style={{fontSize:11,color:T.hint,marginBottom:8}}>已選取片段</div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:22,fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmt(winPos)}</span>
+                <span style={{color:T.hint}}>—</span>
+                <span style={{fontSize:22,fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmt(winPos+10)}</span>
+              </div>
+              <span style={{fontSize:12,color:T.sub,background:T.bg,border:`1px solid ${T.bor}`,
+                            padding:'3px 10px',borderRadius:20}}>10 分鐘</span>
+            </div>
+            <div style={{background:T.bg,borderRadius:8,padding:'8px 10px',border:`1px solid ${T.bor}`}}>
+              <span style={{fontSize:11,color:T.sub}}>
+                REWH 最高時刻：{fmt(peak)}（預覽片段將自動擷取此位置起算 15 秒）
+              </span>
+            </div>
+          </div>
+
+          <div style={{fontSize:11,color:T.hint,marginBottom:18,lineHeight:1.7}}>
+            選取後進入剪輯畫面，可進一步修剪片段長度與套用效果。
+          </div>
+
+          <button onClick={()=>go('loading')} className="tap"
+            style={{width:'100%',padding:'14px',borderRadius:12,background:T.cta,
+                    color:T.ctaT,fontSize:16,fontWeight:700,border:'none',cursor:'pointer'}}>
+            開始剪輯
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── Loading ── */
+const Loading=({go})=>{
+  const [prog,setProg]=useState(0);
+  useEffect(()=>{
+    const t=setInterval(()=>setProg(p=>{
+      if(p>=100){clearInterval(t);setTimeout(()=>go('editor'),300);return 100;}
+      return Math.min(100,p+Math.random()*8+4);
+    }),180);
+    return()=>clearInterval(t);
+  },[]);
+  return(
+    <div className="screen" style={{alignItems:'center',justifyContent:'center',
+                                     gap:20,padding:40,background:T.sur}}>
+      <div style={{width:64,height:64,borderRadius:16,background:T.bg,border:`1px solid ${T.bor}`,
+                   display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{width:24,height:24,border:`3px solid ${T.bor}`,borderTop:`3px solid ${T.txt}`,
+                     borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+      </div>
+      <div style={{fontSize:18,fontWeight:700}}>讀取中</div>
+      <div style={{fontSize:13,color:T.sub,textAlign:'center',lineHeight:1.6}}>正在準備剪輯素材，請稍候</div>
+      <div style={{width:240,background:T.bg,borderRadius:100,height:6,border:`1px solid ${T.bor}`,overflow:'hidden'}}>
+        <div style={{height:'100%',background:T.cta,borderRadius:100,
+                     width:`${Math.min(100,prog)}%`,transition:'width 0.18s'}}/>
+      </div>
+      <div style={{fontSize:13,color:T.sub}}>{Math.min(100,Math.round(prog))}%</div>
+    </div>
+  );
+};
+
+/* ── Editor ── */
+const Editor=({go,setClipData,vod,winPos,setDialog})=>{
+  const [panel,setPanel]=useState(null);
+  const [music,setMusic]=useState(null);
+  const [filter,setFilter]=useState('原始');
+  const [sticker,setSticker]=useState(null);
+  const [speed,setSpeed]=useState('1x');
+
+  const TOOLS=['分割','裁切','音樂','濾鏡','文字','字幕','貼圖','變速','音量'];
+
+  const PH=({title})=>(
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+      <span style={{fontSize:15,fontWeight:700}}>{title}</span>
+      <button onClick={()=>setPanel(null)} className="tap"
+        style={{background:'none',border:'none',fontSize:18,color:T.hint,cursor:'pointer',lineHeight:1}}>✕</button>
+    </div>
+  );
+
+  const panels={
+    音樂:(
+      <div><PH title="背景音樂"/>
+        <div style={{overflowY:'auto',maxHeight:180}}>
+          {MUSIC.map(m=>(
+            <div key={m.id} onClick={()=>{setMusic(m.id);setPanel(null);}} className="tap"
+              style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+                      padding:'10px 0',borderBottom:`1px solid ${T.div}`,cursor:'pointer'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:36,height:36,borderRadius:8,background:T.bg,border:`1px solid ${T.bor}`,flexShrink:0}}/>
+                <div>
+                  <div style={{fontSize:13,fontWeight:music===m.id?600:400}}>{m.title}</div>
+                  <div style={{fontSize:11,color:T.hint}}>{m.dur}</div>
+                </div>
+              </div>
+              {music===m.id&&<span style={{fontSize:12,fontWeight:700}}>✓</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+    濾鏡:(
+      <div><PH title="濾鏡"/>
+        <div style={{display:'flex',gap:10,overflowX:'auto',paddingBottom:4}}>
+          {FILTERS.map(f=>(
+            <div key={f} onClick={()=>{setFilter(f);setPanel(null);}} className="tap"
+              style={{flexShrink:0,textAlign:'center',cursor:'pointer'}}>
+              <div style={{width:58,height:58,borderRadius:10,background:T.bg,
+                           border:`2px solid ${filter===f?T.txt:T.bor}`}}/>
+              <div style={{fontSize:10,color:filter===f?T.txt:T.hint,marginTop:4,fontWeight:filter===f?600:400}}>{f}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+    文字:(
+      <div><PH title="文字疊加"/>
+        <input placeholder="輸入文字內容…"
+          style={{width:'100%',background:T.bg,border:`1px solid ${T.bor}`,borderRadius:10,
+                  padding:'11px 12px',color:T.txt,fontSize:14,marginBottom:12}}/>
+        <div style={{display:'flex',gap:8}}>
+          {['#111','#555','#999','#fff','#c62828'].map(c=>(
+            <div key={c} style={{width:30,height:30,borderRadius:'50%',background:c,
+                                  border:`2px solid ${T.bor}`,cursor:'pointer'}}/>
+          ))}
+        </div>
+      </div>
+    ),
+    字幕:(
+      <div><PH title="字幕"/>
+        <div style={{display:'flex',gap:10}}>
+          {['自動生成','手動輸入'].map(t=>(
+            <button key={t} style={{flex:1,padding:'12px',borderRadius:10,background:T.bg,
+                                     border:`1px solid ${T.bor}`,color:T.txt,fontSize:13,cursor:'pointer'}}>{t}</button>
+          ))}
+        </div>
+      </div>
+    ),
+    貼圖:(
+      <div><PH title="貼圖"/>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {STICKERS.map(s=>(
+            <div key={s} onClick={()=>{setSticker(s);setPanel(null);}} className="tap"
+              style={{width:56,height:36,borderRadius:8,background:T.bg,
+                      border:`2px solid ${sticker===s?T.txt:T.bor}`,
+                      display:'flex',alignItems:'center',justifyContent:'center',
+                      fontSize:11,cursor:'pointer',color:T.sub}}>{s}</div>
+          ))}
+        </div>
+      </div>
+    ),
+    變速:(
+      <div><PH title="變速"/>
+        <div style={{display:'flex',gap:6}}>
+          {SPEEDS.map(s=>(
+            <button key={s} onClick={()=>{setSpeed(s);setPanel(null);}} className="tap"
+              style={{flex:1,padding:'10px 2px',borderRadius:10,fontSize:12,
+                      background:speed===s?T.cta:T.bg,color:speed===s?T.ctaT:T.txt,
+                      border:`1px solid ${speed===s?T.cta:T.bor}`,
+                      fontWeight:speed===s?700:400,cursor:'pointer'}}>{s}</button>
+          ))}
+        </div>
+      </div>
+    ),
+    音量:(
+      <div><PH title="音量調整"/>
+        {[['原聲音量',80],['背景音樂',50]].map(([l,d])=>(
+          <div key={l} style={{marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+              <span style={{fontSize:13}}>{l}</span>
+              <span style={{fontSize:13,fontWeight:600}}>{d}%</span>
+            </div>
+            <input type="range" min="0" max="100" defaultValue={d}/>
+          </div>
+        ))}
+      </div>
+    ),
+    裁切:(
+      <div><PH title="裁切比例"/>
+        <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+          {['原始','9:16','16:9','1:1','4:3'].map(l=>(
+            <div key={l} style={{textAlign:'center',cursor:'pointer'}}>
+              <div style={{width:52,height:52,borderRadius:10,background:T.bg,border:`1.5px solid ${T.bor}`,
+                           display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <div style={{width:26,height:26,border:`1.5px solid ${T.sub}`}}/>
+              </div>
+              <div style={{fontSize:10,color:T.sub,marginTop:4}}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+    分割:(
+      <div><PH title="分割片段"/>
+        <div style={{fontSize:13,color:T.sub,marginBottom:16}}>在目前播放位置分割影片</div>
+        <button onClick={()=>setPanel(null)} className="tap"
+          style={{width:'100%',padding:'12px',borderRadius:10,background:T.cta,color:T.ctaT,
+                  fontSize:14,fontWeight:700,border:'none',cursor:'pointer'}}>確認分割</button>
+      </div>
+    ),
+  };
+
+  const handleDone=()=>{
+    setClipData({vod,winPos});
+    go('post_settings');
+  };
+
+  return(
+    <div className="screen" style={{background:T.sur,position:'relative'}}>
+      {/* Top bar */}
+      <div style={{padding:'44px 20px 12px',display:'flex',justifyContent:'space-between',
+                   alignItems:'center',borderBottom:`1px solid ${T.bor}`,flexShrink:0}}>
+        <button onClick={()=>setDialog('cancelEdit')} className="tap"
+          style={{background:'none',border:'none',fontSize:13,color:T.sub,cursor:'pointer'}}>取消</button>
+        <span style={{fontSize:16,fontWeight:700}}>剪輯精華</span>
+        <button onClick={handleDone} className="tap"
+          style={{background:T.cta,border:'none',borderRadius:8,padding:'6px 14px',
+                  color:T.ctaT,fontSize:13,fontWeight:700,cursor:'pointer'}}>完成</button>
+      </div>
+
+      {/* Video */}
+      <div style={{background:'#1a1a1a',aspectRatio:'16/9',flexShrink:0,overflow:'hidden',
+                   position:'relative',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{opacity:0.15,position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{width:0,height:0,borderTop:'16px solid transparent',
+                       borderBottom:'16px solid transparent',borderLeft:'28px solid rgba(255,255,255,0.5)'}}/>
+        </div>
+        {music&&<div style={{position:'absolute',bottom:8,left:10,background:'rgba(0,0,0,0.55)',
+                              color:'#fff',fontSize:10,padding:'2px 7px',borderRadius:4}}>
+          音樂：{MUSIC.find(m=>m.id===music)?.title}</div>}
+        {filter!=='原始'&&<div style={{position:'absolute',bottom:8,right:10,background:'rgba(0,0,0,0.55)',
+                                       color:'#fff',fontSize:10,padding:'2px 7px',borderRadius:4}}>
+          濾鏡：{filter}</div>}
+        {sticker&&<div style={{position:'absolute',top:10,right:12,background:'rgba(0,0,0,0.5)',
+                                color:'#fff',fontSize:10,padding:'2px 7px',borderRadius:4}}>[{sticker}]</div>}
+        {speed!=='1x'&&<div style={{position:'absolute',top:10,left:10,background:'rgba(0,0,0,0.5)',
+                                     color:'#fff',fontSize:10,padding:'2px 7px',borderRadius:4}}>速度 {speed}</div>}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{display:'flex',overflowX:'auto',padding:'8px 12px',
+                   borderBottom:`1px solid ${T.bor}`,flexShrink:0,gap:2}}>
+        {TOOLS.map(t=>(
+          <button key={t} onClick={()=>setPanel(panel===t?null:t)} className="tap"
+            style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,
+                    padding:'6px 9px',borderRadius:8,flexShrink:0,cursor:'pointer',
+                    background:panel===t?T.bg:'none',
+                    border:`1px solid ${panel===t?T.bor:'transparent'}`}}>
+            <div style={{width:20,height:20,borderRadius:4,background:T.bg,
+                         border:`1.5px solid ${panel===t?T.txt:T.bor}`}}/>
+            <span style={{fontSize:10,color:panel===t?T.txt:T.sub,fontWeight:panel===t?600:400}}>{t}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Timeline */}
+      <div style={{padding:'10px 16px 8px',flexShrink:0}}>
+        <div style={{fontSize:10,color:T.hint,marginBottom:5}}>時間軸</div>
+        <div style={{background:T.bg,border:`1px solid ${T.bor}`,borderRadius:8,height:48,
+                     position:'relative',overflow:'hidden'}}>
+          <div style={{position:'absolute',left:'4%',right:'4%',top:6,bottom:6,
+                       background:'rgba(0,0,0,0.05)',border:`1.5px solid ${T.txt}`,borderRadius:5,
+                       display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <span style={{fontSize:10,color:T.sub}}>精華片段 · {fmt(winPos)} — {fmt(winPos+10)}</span>
+          </div>
+          <div style={{position:'absolute',left:'28%',top:0,bottom:0,width:1.5,background:T.txt,opacity:0.5}}/>
+        </div>
+      </div>
+
+      <div style={{flex:1}}/>
+
+      {panel&&<div onClick={()=>setPanel(null)}
+        style={{position:'absolute',inset:0,zIndex:40,background:'rgba(0,0,0,0.15)'}}/>}
+      {panel&&panels[panel]&&(
+        <div className="sheet-enter"
+          style={{position:'absolute',bottom:0,left:0,right:0,background:T.sur,
+                  borderRadius:'18px 18px 0 0',padding:'18px 16px 32px',zIndex:50,
+                  maxHeight:300,overflowY:'auto',border:`1px solid ${T.bor}`,
+                  boxShadow:'0 -4px 24px rgba(0,0,0,0.06)'}}>
+          {panels[panel]}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ── Uploading ── */
+const Uploading=({go})=>{
+  const [prog,setProg]=useState(0);
+  const [phase,setPhase]=useState('process');
+  useEffect(()=>{
+    const t=setInterval(()=>setProg(p=>{
+      if(p>=100){clearInterval(t);setTimeout(()=>go('success'),400);return 100;}
+      if(p>48&&phase==='process')setPhase('upload');
+      return Math.min(100,p+Math.random()*5+3);
+    }),180);
+    return()=>clearInterval(t);
+  },[]);
+  return(
+    <div className="screen" style={{alignItems:'center',justifyContent:'center',
+                                     gap:20,padding:40,background:T.sur}}>
+      <div style={{width:64,height:64,borderRadius:16,background:T.bg,border:`1px solid ${T.bor}`,
+                   display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{width:24,height:24,border:`3px solid ${T.bor}`,borderTop:`3px solid ${T.txt}`,
+                     borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+      </div>
+      <div style={{fontSize:18,fontWeight:700}}>{phase==='process'?'處理影片中':'上傳中'}</div>
+      <div style={{fontSize:13,color:T.sub}}>{phase==='process'?'本地端處理影片…':'正在上傳至平台…'}</div>
+      <div style={{width:240,background:T.bg,borderRadius:100,height:6,border:`1px solid ${T.bor}`,overflow:'hidden'}}>
+        <div style={{height:'100%',background:T.cta,borderRadius:100,width:`${Math.min(100,prog)}%`,transition:'width 0.18s'}}/>
+      </div>
+      <div style={{fontSize:13,color:T.sub}}>{Math.min(100,Math.round(prog))}%</div>
+    </div>
+  );
+};
+
+/* ── Success ── */
+const Success=({go})=>(
+  <div className="screen" style={{alignItems:'center',justifyContent:'center',
+                                   gap:16,padding:'32px 24px',background:T.sur}}>
+    <div style={{width:72,height:72,borderRadius:'50%',background:T.bg,border:`2px solid ${T.bor}`,
+                 display:'flex',alignItems:'center',justifyContent:'center',fontSize:32}}>✓</div>
+    <div style={{fontSize:22,fontWeight:700}}>發布成功</div>
+    <div style={{fontSize:13,color:T.sub,textAlign:'center',lineHeight:1.8}}>
+      直播精華已上架至個人頁面「影片」Tab<br/>粉絲可以付費解鎖觀看
+    </div>
+    <div style={{background:T.bg,borderRadius:14,padding:'14px 16px',width:'100%',
+                 marginTop:4,border:`1px solid ${T.bor}`}}>
+      {[['顯示位置','影片 Tab'],['解鎖費用','500 鑽'],['預覽片段','15 秒']].map(([l,v])=>(
+        <div key={l} style={{display:'flex',justifyContent:'space-between',
+                              padding:'7px 0',borderBottom:`1px solid ${T.div}`}}>
+          <span style={{fontSize:13,color:T.sub}}>{l}</span>
+          <span style={{fontSize:13,fontWeight:600}}>{v}</span>
+        </div>
+      ))}
+    </div>
+    <button onClick={()=>go('personal_center')} className="tap"
+      style={{width:'100%',padding:'14px',borderRadius:12,background:T.cta,color:T.ctaT,
+              fontSize:15,fontWeight:700,border:'none',cursor:'pointer',marginTop:4}}>
+      查看貼文
+    </button>
+    <button onClick={()=>go('post_settings')} className="tap"
+      style={{width:'100%',padding:'13px',borderRadius:12,background:T.sur,color:T.txt,
+              fontSize:14,border:`1px solid ${T.bor}`,cursor:'pointer'}}>
+      繼續上架其他精華
+    </button>
+  </div>
+);
+
+/* ── Flow nav ── */
+const NAV=[
+  ['personal_center','個人中心'],
+  ['post_settings','貼文設定'],
+  ['clip_select','選取片段'],
+  ['loading','讀取中'],
+  ['editor','剪輯'],
+  ['preview_select','調整預覽'],
+  ['uploading','上傳中'],
+  ['success','完成'],
+];
+
+/* ── App ── */
+const App=()=>{
+  const [screen,setScreen]=useState('personal_center');
+  const [vod,setVod]=useState(VODS[0]);
+  const [winPos,setWinPos]=useState(38);
+  const [clipData,setClipData]=useState(null);
+  const [showCreate,setShowCreate]=useState(false);
+  const [dialog,setDialog]=useState(null);
+
+  const go=s=>{setScreen(s);setShowCreate(false);};
+
+  const render=()=>{
+    const p={go,setDialog};
+    switch(screen){
+      case 'personal_center': return <PersonalCenter onPlus={()=>setShowCreate(true)}/>;
+      case 'post_settings':   return <PostSettings {...p} clipData={clipData} setClipData={setClipData}
+                                       setVod={setVod} winPos={winPos} setWinPos={setWinPos}/>;
+      case 'clip_select':     return <ClipSelect {...p} vod={vod} winPos={winPos} setWinPos={setWinPos}
+                                       setClipData={setClipData}/>;
+      case 'loading':         return <Loading go={go}/>;
+      case 'editor':          return <Editor {...p} vod={vod} winPos={winPos} setClipData={setClipData}/>;
+      case 'preview_select':  return <PreviewSelect go={go} clipData={clipData}/>;
+      case 'uploading':       return <Uploading go={go}/>;
+      case 'success':         return <Success go={go}/>;
+    }
+  };
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:16}}>
+      {/* Flow nav */}
+      <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap',justifyContent:'center',maxWidth:640}}>
+        {NAV.map(([s,l],i)=>(
+          <React.Fragment key={s}>
+            <button onClick={()=>go(s)}
+              style={{padding:'4px 11px',borderRadius:20,fontSize:11,border:'none',cursor:'pointer',
+                      background:screen===s?'#111':'#d0d0d0',
+                      color:screen===s?'#fff':'#555',fontWeight:screen===s?700:400}}>{l}</button>
+            {i<NAV.length-1&&<span style={{color:'#bbb',fontSize:10}}>›</span>}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="phone">
+        {render()}
+        {showCreate&&(
+          <CreateMenu onClose={()=>setShowCreate(false)} onAction={()=>go('post_settings')}/>
+        )}
+        {dialog==='cancelEdit'&&(
+          <Dialog title="放棄編輯？"
+            msg="目前的剪輯內容將不會儲存，確定要離開嗎？"
+            confirmLabel="放棄編輯" danger
+            onConfirm={()=>{setDialog(null);go('post_settings');}}
+            onCancel={()=>setDialog(null)}/>
+        )}
+      </div>
+      <div style={{color:'#aaa',fontSize:11}}>Media Editor Demo · Moor APP · Wireframe v3</div>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
