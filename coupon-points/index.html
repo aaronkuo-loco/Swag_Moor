@@ -101,39 +101,36 @@
     <text x="149" y="92" text-anchor="middle" font-size="10" fill="#bbb">請求憑證</text>
 
     <!-- 後端 API -->
-    <rect x="170" y="64" width="150" height="70" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
-    <text x="245" y="86" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">後端 API Server</text>
-    <text x="245" y="102" text-anchor="middle" font-size="11" fill="#4060b0">驗證主播身份</text>
-    <text x="245" y="118" text-anchor="middle" font-size="11" fill="#4060b0">產生短效憑證</text>
-    <text x="245" y="130" text-anchor="middle" font-size="10" fill="#8090c0">短效 · 帶主播身份識別</text>
+    <rect x="170" y="70" width="150" height="58" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
+    <text x="245" y="92" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">後端 API Server</text>
+    <text x="245" y="108" text-anchor="middle" font-size="11" fill="#4060b0">確認主播身份</text>
+    <text x="245" y="122" text-anchor="middle" font-size="11" fill="#4060b0">產生短效通行證</text>
 
     <!-- → 積分頁跳轉 -->
     <line x1="320" y1="99" x2="358" y2="99" stroke="#ccc" stroke-width="1.5" marker-end="url(#a0)"/>
     <text x="339" y="92" text-anchor="middle" font-size="10" fill="#bbb">跳轉</text>
 
     <!-- 積分頁 -->
-    <rect x="360" y="64" width="160" height="70" rx="6" fill="#fff8f0" stroke="#f0a060" stroke-width="1.5"/>
-    <text x="440" y="86" text-anchor="middle" font-size="12" font-weight="600" fill="#8b4a00">積分頁 /cpreward</text>
-    <text x="440" y="102" text-anchor="middle" font-size="11" fill="#c07030">URL 帶憑證參數</text>
-    <text x="440" y="118" text-anchor="middle" font-size="11" fill="#c07030">憑證換取 Session</text>
-    <text x="440" y="130" text-anchor="middle" font-size="10" fill="#e09050">憑證用後即棄，不存本地</text>
+    <rect x="360" y="70" width="160" height="58" rx="6" fill="#fff8f0" stroke="#f0a060" stroke-width="1.5"/>
+    <text x="440" y="92" text-anchor="middle" font-size="12" font-weight="600" fill="#8b4a00">積分頁 /cpreward</text>
+    <text x="440" y="108" text-anchor="middle" font-size="11" fill="#c07030">驗證通行證</text>
+    <text x="440" y="122" text-anchor="middle" font-size="11" fill="#c07030">進入積分頁</text>
 
-    <!-- → 驗證服務 -->
+    <!-- → 已登入 -->
     <line x1="520" y1="99" x2="558" y2="99" stroke="#ccc" stroke-width="1.5" marker-end="url(#a0)"/>
-    <text x="539" y="92" text-anchor="middle" font-size="10" fill="#bbb">驗證</text>
+    <text x="539" y="92" text-anchor="middle" font-size="10" fill="#bbb">登入</text>
 
-    <!-- 驗證服務 -->
-    <rect x="560" y="64" width="200" height="70" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
-    <text x="660" y="86" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">驗證服務</text>
-    <text x="660" y="102" text-anchor="middle" font-size="11" fill="#3a8060">Session 建立（主播身份確認）</text>
-    <text x="660" y="118" text-anchor="middle" font-size="11" fill="#3a8060">後續所有後端呼叫</text>
-    <text x="660" y="130" text-anchor="middle" font-size="10" fill="#7ab090">自動帶身份憑證 · 後端驗證身份</text>
+    <!-- 已登入狀態 -->
+    <rect x="560" y="70" width="200" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
+    <text x="660" y="92" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">已登入狀態</text>
+    <text x="660" y="108" text-anchor="middle" font-size="11" fill="#3a8060">主播身份確認完成</text>
+    <text x="660" y="122" text-anchor="middle" font-size="11" fill="#3a8060">後續操作以主播身份執行</text>
 
     <!-- 步驟標籤 -->
     <text x="70" y="148" text-anchor="middle" font-size="10" fill="#ccc">① 點擊連結</text>
-    <text x="245" y="148" text-anchor="middle" font-size="10" fill="#ccc">② 取得短效憑證</text>
+    <text x="245" y="148" text-anchor="middle" font-size="10" fill="#ccc">② 取得通行證</text>
     <text x="440" y="148" text-anchor="middle" font-size="10" fill="#ccc">③ 跳轉並驗證</text>
-    <text x="660" y="148" text-anchor="middle" font-size="10" fill="#ccc">④ Session 建立，後續操作免重驗</text>
+    <text x="660" y="148" text-anchor="middle" font-size="10" fill="#ccc">④ 登入完成</text>
   </svg>
 </div>
 
@@ -243,12 +240,12 @@
       <text x="190" y="106" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">兌換申請 API</text>
       <text x="190" y="122" text-anchor="middle" font-size="11" fill="#4060b0">後端服務</text>
       <text x="190" y="138" text-anchor="middle" font-size="11" fill="#4060b0">驗證餘額 · FEFO 扣積分</text>
-      <text x="190" y="152" text-anchor="middle" font-size="10" fill="#8090c0">原子操作 · 冪等保護</text>
+      <text x="190" y="152" text-anchor="middle" font-size="10" fill="#8090c0">確保寫入完整性 · 防止重複扣分</text>
       <text x="190" y="164" text-anchor="middle" font-size="10" fill="#9060d0">驗證主播身份</text>
 
       <!-- ↓ 原子寫入 -->
       <line x1="190" y1="170" x2="190" y2="206" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
-      <text x="196" y="193" font-size="10" fill="#bbb">原子寫入</text>
+      <text x="196" y="193" font-size="10" fill="#bbb">寫入資料庫</text>
 
       <!-- Firestore -->
       <rect x="55" y="208" width="270" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
