@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>互動券轉換積分 — 系統架構圖</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    background: #f5f5f5;
+    color: #111;
+    padding: 32px;
+  }
+  .page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .page-meta { font-size: 13px; color: #888; margin-bottom: 24px; }
+
+  .notes {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+  }
+  .notes-title { font-size: 12px; font-weight: 600; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .note-item { font-size: 13px; color: #333; margin-bottom: 7px; padding-left: 14px; position: relative; line-height: 1.6; }
+  .note-item::before { content: '▸'; position: absolute; left: 0; color: #bbb; }
+
+  .diagrams { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .diagrams { grid-template-columns: 1fr; } }
+
+  .card {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #888;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ebebeb;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 24px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 14px 20px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="page-title">互動券轉換積分 — 系統架構圖</div>
+<div class="page-meta">Draft v2 &nbsp;·&nbsp; 2026-03-30 &nbsp;·&nbsp; 主播端 &nbsp;·&nbsp; 以 V2 coupon_reward 流程為主</div>
+
+<div class="notes">
+  <div class="notes-title">架構說明</div>
+  <div class="note-item"><strong>積分 source of truth 在 Firestore：</strong>所有積分寫入經由 Cloud Functions 以 Firestore Transaction 處理，前端不直接寫入。</div>
+  <div class="note-item"><strong>BigQuery → cprewardCouponSync → Firestore：</strong>互動券使用事件寫入 BigQuery，排程 Cloud Function 定期讀取 BQ 增量資料，依積分換算 Config 計算後發放 coupon_reward 積分給主播。</div>
+  <div class="note-item"><strong>兌換全程走 Cloud Functions：</strong>cprewardRedeem 負責扣積分（含 FEFO 邏輯與冪等保護），cprewardUpdateRedemption 負責審核後的 approved / rejected 處理（rejected 自動退款）。</div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#fff8f0;border-color:#f0a060"></div>用戶 / 主播端</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0f4ff;border-color:#6080d0"></div>後端 API / Cloud Functions</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0fff4;border-color:#50a070"></div>Firestore（主資料庫）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f8f0ff;border-color:#9060d0"></div>BigQuery（分析 / 事件）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fffff0;border-color:#c0a020"></div>Config（PM 管理）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f8f8f8;border-color:#aaaaaa"></div>外部系統</div>
+</div>
+
+<div class="diagrams">
+
+  <!-- 流程一：積分累積 -->
+  <div class="card">
+    <div class="card-title">流程一：積分累積（coupon_reward）</div>
+    <svg viewBox="0 0 380 600" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L7,3 z" fill="#bbb"/>
+        </marker>
+      </defs>
+
+      <!-- 用戶 APP -->
+      <rect x="120" y="12" width="140" height="46" rx="6" fill="#fff8f0" stroke="#f0a060" stroke-width="1.5"/>
+      <text x="190" y="31" text-anchor="middle" font-size="12" font-weight="600" fill="#8b4a00">用戶端</text>
+      <text x="190" y="48" text-anchor="middle" font-size="11" fill="#c07030">使用互動券</text>
+
+      <!-- ↓ -->
+      <line x1="190" y1="58" x2="190" y2="96" stroke="#ccc" stroke-width="1.5" marker-end="url(#a1)"/>
+      <text x="196" y="82" font-size="10" fill="#bbb">API 請求</text>
+
+      <!-- 後端 API -->
+      <rect x="55" y="98" width="270" height="58" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
+      <text x="190" y="118" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">後端 API Server</text>
+      <text x="190" y="134" text-anchor="middle" font-size="11" fill="#4060b0">確認券使用</text>
+      <text x="190" y="148" text-anchor="middle" font-size="11" fill="#8090c0">（原有系統，不需改動）</text>
+
+      <!-- ↓ BigQuery -->
+      <line x1="190" y1="156" x2="190" y2="196" stroke="#ccc" stroke-width="1.5" marker-end="url(#a1)"/>
+      <text x="196" y="181" font-size="10" fill="#bbb">寫入事件</text>
+
+      <!-- BigQuery -->
+      <rect x="105" y="198" width="170" height="46" rx="6" fill="#f8f0ff" stroke="#9060d0" stroke-width="1.5"/>
+      <text x="190" y="217" text-anchor="middle" font-size="12" font-weight="600" fill="#4a1080">BigQuery</text>
+      <text x="190" y="233" text-anchor="middle" font-size="11" fill="#7040a0">券使用事件記錄</text>
+
+      <!-- ↓ cprewardCouponSync -->
+      <line x1="190" y1="244" x2="190" y2="284" stroke="#ccc" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#a1)"/>
+      <text x="196" y="269" font-size="10" fill="#bbb">定期同步</text>
+
+      <!-- cprewardCouponSync -->
+      <rect x="40" y="286" width="300" height="58" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
+      <text x="190" y="306" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">cprewardCouponSync</text>
+      <text x="190" y="322" text-anchor="middle" font-size="11" fill="#4060b0">排程 Cloud Function</text>
+      <text x="190" y="336" text-anchor="middle" font-size="11" fill="#8090c0">讀 BQ 增量 → 依 Config 計算積分 → 寫入</text>
+
+      <!-- Config 標示 -->
+      <rect x="8" y="296" width="54" height="34" rx="4" fill="#fffff0" stroke="#c0a020" stroke-width="1.2"/>
+      <text x="35" y="310" text-anchor="middle" font-size="9" font-weight="600" fill="#6b5600">積分換算</text>
+      <text x="35" y="322" text-anchor="middle" font-size="9" fill="#8b7000">Config</text>
+      <line x1="62" y1="313" x2="92" y2="318" stroke="#c0a020" stroke-width="1" stroke-dasharray="3,2"/>
+
+      <!-- ↓ Firestore -->
+      <line x1="190" y1="344" x2="190" y2="384" stroke="#ccc" stroke-width="1.5" marker-end="url(#a1)"/>
+      <text x="196" y="369" font-size="10" fill="#bbb">發放積分</text>
+
+      <!-- Firestore cpreward_accounts -->
+      <rect x="55" y="386" width="270" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
+      <text x="190" y="406" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">Firestore</text>
+      <text x="190" y="422" text-anchor="middle" font-size="11" fill="#3a8060">cpreward_accounts / transactions</text>
+      <text x="190" y="436" text-anchor="middle" font-size="10" fill="#7ab090">source: coupon_reward · earn transaction</text>
+
+      <!-- ↓ cprewardGetData -->
+      <line x1="190" y1="444" x2="190" y2="484" stroke="#ccc" stroke-width="1.5" marker-end="url(#a1)"/>
+      <text x="196" y="469" font-size="10" fill="#bbb">onCall 讀取</text>
+
+      <!-- cprewardGetData -->
+      <rect x="75" y="486" width="230" height="34" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
+      <text x="190" y="501" text-anchor="middle" font-size="11" font-weight="600" fill="#1a3080">cprewardGetData</text>
+      <text x="190" y="515" text-anchor="middle" font-size="10" fill="#6070b0">Cloud Function · 整合帳戶 + 交易 + 商品</text>
+
+      <!-- ↓ Moor APP -->
+      <line x1="190" y1="520" x2="190" y2="556" stroke="#ccc" stroke-width="1.5" marker-end="url(#a1)"/>
+
+      <!-- Moor APP -->
+      <rect x="110" y="558" width="160" height="36" rx="6" fill="#fff8f0" stroke="#f0a060" stroke-width="1.5"/>
+      <text x="190" y="573" text-anchor="middle" font-size="12" font-weight="600" fill="#8b4a00">積分頁</text>
+      <text x="190" y="587" text-anchor="middle" font-size="11" fill="#c07030">獨立頁面 /cpreward</text>
+    </svg>
+  </div>
+
+  <!-- 流程二：積分兌換 -->
+  <div class="card">
+    <div class="card-title">流程二：積分兌換</div>
+    <svg viewBox="0 0 380 600" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L7,3 z" fill="#bbb"/>
+        </marker>
+      </defs>
+
+      <!-- Moor APP -->
+      <rect x="110" y="12" width="160" height="36" rx="6" fill="#fff8f0" stroke="#f0a060" stroke-width="1.5"/>
+      <text x="190" y="27" text-anchor="middle" font-size="12" font-weight="600" fill="#8b4a00">積分兌換頁</text>
+      <text x="190" y="41" text-anchor="middle" font-size="11" fill="#c07030">主播選擇兌換項目</text>
+
+      <!-- ↓ -->
+      <line x1="190" y1="48" x2="190" y2="84" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
+      <text x="196" y="71" font-size="10" fill="#bbb">onCall 呼叫</text>
+
+      <!-- cprewardRedeem -->
+      <rect x="40" y="86" width="300" height="72" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
+      <text x="190" y="106" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">cprewardRedeem</text>
+      <text x="190" y="122" text-anchor="middle" font-size="11" fill="#4060b0">Cloud Function</text>
+      <text x="190" y="138" text-anchor="middle" font-size="11" fill="#4060b0">驗證餘額 · FEFO 扣積分</text>
+      <text x="190" y="152" text-anchor="middle" font-size="10" fill="#8090c0">Firestore Transaction · 冪等保護</text>
+
+      <!-- ↓ Firestore Transaction -->
+      <line x1="190" y1="158" x2="190" y2="194" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
+      <text x="196" y="181" font-size="10" fill="#bbb">Transaction</text>
+
+      <!-- Firestore -->
+      <rect x="55" y="196" width="270" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
+      <text x="190" y="216" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">Firestore</text>
+      <text x="190" y="232" text-anchor="middle" font-size="11" fill="#3a8060">扣除積分 · 建立 cpreward_redemptions</text>
+      <text x="190" y="246" text-anchor="middle" font-size="10" fill="#7ab090">status: pending · 庫存 -1</text>
+
+      <!-- ↓ 管理員審核 -->
+      <line x1="190" y1="254" x2="190" y2="290" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
+      <text x="196" y="277" font-size="10" fill="#bbb">後台審核</text>
+
+      <!-- cprewardUpdateRedemption -->
+      <rect x="40" y="292" width="300" height="46" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
+      <text x="190" y="312" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">cprewardUpdateRedemption</text>
+      <text x="190" y="328" text-anchor="middle" font-size="11" fill="#4060b0">管理員 Approved / Rejected</text>
+
+      <!-- fork -->
+      <line x1="190" y1="338" x2="190" y2="358" stroke="#ccc" stroke-width="1.5"/>
+      <line x1="80" y1="358" x2="308" y2="358" stroke="#ccc" stroke-width="1.5"/>
+      <line x1="90" y1="358" x2="90" y2="388" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
+      <line x1="298" y1="358" x2="298" y2="388" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
+      <text x="36" y="354" font-size="10" fill="#bbb">Approved</text>
+      <text x="258" y="354" font-size="10" fill="#bbb">Rejected</text>
+
+      <!-- Approved 分支 -->
+      <rect x="14" y="390" width="152" height="58" rx="6" fill="#f8f8f8" stroke="#aaaaaa" stroke-width="1.5"/>
+      <text x="90" y="410" text-anchor="middle" font-size="11" font-weight="600" fill="#444">商品 / 鑽石發送</text>
+      <text x="90" y="426" text-anchor="middle" font-size="10" fill="#777">鑽石 → 鑽石派發系統</text>
+      <text x="90" y="440" text-anchor="middle" font-size="10" fill="#777">商品 → 人工處理寄送</text>
+
+      <!-- Rejected 分支 -->
+      <rect x="214" y="390" width="152" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
+      <text x="290" y="410" text-anchor="middle" font-size="11" font-weight="600" fill="#1a6040">自動退款</text>
+      <text x="290" y="426" text-anchor="middle" font-size="10" fill="#3a8060">redeem_refund earn 交易</text>
+      <text x="290" y="440" text-anchor="middle" font-size="10" fill="#3a8060">FEFO · 已到期補 7 天緩衝</text>
+
+      <!-- ↓ Firestore 更新 -->
+      <line x1="90" y1="448" x2="150" y2="496" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
+      <line x1="290" y1="448" x2="240" y2="496" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
+
+      <!-- Firestore 更新 -->
+      <rect x="75" y="498" width="230" height="46" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
+      <text x="190" y="518" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">Firestore 更新</text>
+      <text x="190" y="534" text-anchor="middle" font-size="11" fill="#3a8060">balance · status · 兌換紀錄</text>
+
+      <!-- ↓ Moor APP -->
+      <line x1="190" y1="544" x2="190" y2="558" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
+
+      <!-- Moor APP 結果 -->
+      <rect x="110" y="560" width="160" height="36" rx="6" fill="#fff8f0" stroke="#f0a060" stroke-width="1.5"/>
+      <text x="190" y="575" text-anchor="middle" font-size="12" font-weight="600" fill="#8b4a00">積分兌換頁</text>
+      <text x="190" y="589" text-anchor="middle" font-size="11" fill="#c07030">顯示結果 + 兌換紀錄</text>
+    </svg>
+  </div>
+
+</div>
+</body>
+</html>
