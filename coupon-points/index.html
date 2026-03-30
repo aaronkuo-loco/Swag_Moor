@@ -63,27 +63,27 @@
 <body>
 
 <div class="page-title">互動券轉換積分 — 系統架構圖</div>
-<div class="page-meta">Draft v2 &nbsp;·&nbsp; 2026-03-30 &nbsp;·&nbsp; 主播端 &nbsp;·&nbsp; 以 V2 coupon_reward 流程為主</div>
+<div class="page-meta">Draft v2 &nbsp;·&nbsp; 2026-03-30 &nbsp;·&nbsp; 主播端 &nbsp;·&nbsp; 流程討論草稿，實作方式待工程團隊確認</div>
 
 <div class="notes">
   <div class="notes-title">架構說明</div>
-  <div class="note-item"><strong>積分 source of truth 在 Firestore：</strong>所有積分寫入經由 Cloud Functions 以 Firestore Transaction 處理，前端不直接寫入。</div>
-  <div class="note-item"><strong>BigQuery → cprewardCouponSync → Firestore：</strong>互動券使用事件寫入 BigQuery，排程 Cloud Function 定期讀取 BQ 增量資料，依積分換算 Config 計算後發放 coupon_reward 積分給主播。</div>
-  <div class="note-item"><strong>兌換全程走 Cloud Functions：</strong>cprewardRedeem 負責扣積分（含 FEFO 邏輯與冪等保護），cprewardUpdateRedemption 負責審核後的 approved / rejected 處理（rejected 自動退款）。</div>
+  <div class="note-item"><strong>積分資料集中管理：</strong>所有積分寫入由後端統一處理，前端不直接寫入，確保資料一致性。</div>
+  <div class="note-item"><strong>積分累積為非即時流程：</strong>互動券使用事件寫入事件資料倉儲後，由排程服務定期讀取增量，依積分換算 Config 計算後發放積分給主播。</div>
+  <div class="note-item"><strong>兌換全程由後端處理：</strong>兌換申請由後端驗證身份、扣積分（含 FEFO 邏輯與冪等保護），審核後執行 approved / rejected 處理（rejected 自動退款）。</div>
 </div>
 
 <div class="legend">
   <div class="legend-item"><div class="legend-dot" style="background:#fff8f0;border-color:#f0a060"></div>用戶 / 主播端</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#f0f4ff;border-color:#6080d0"></div>後端 API / Cloud Functions</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#f0fff4;border-color:#50a070"></div>Firestore（主資料庫）</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#f8f0ff;border-color:#9060d0"></div>BigQuery（分析 / 事件）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0f4ff;border-color:#6080d0"></div>後端 / 伺服器函式</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0fff4;border-color:#50a070"></div>積分資料庫</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f8f0ff;border-color:#9060d0"></div>事件資料倉儲</div>
   <div class="legend-item"><div class="legend-dot" style="background:#fffff0;border-color:#c0a020"></div>Config（PM 管理）</div>
   <div class="legend-item"><div class="legend-dot" style="background:#f8f8f8;border-color:#aaaaaa"></div>外部系統</div>
 </div>
 
 <!-- 登入機制 -->
 <div class="card" style="margin-bottom:20px">
-  <div class="card-title">流程零：登入機制（Firebase Custom Token）</div>
+  <div class="card-title">流程零：登入機制</div>
   <svg viewBox="0 0 780 200" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <marker id="a0" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
@@ -98,42 +98,39 @@
 
     <!-- → 後端 API -->
     <line x1="130" y1="99" x2="168" y2="99" stroke="#ccc" stroke-width="1.5" marker-end="url(#a0)"/>
-    <text x="149" y="92" text-anchor="middle" font-size="10" fill="#bbb">請求 Token</text>
+    <text x="149" y="92" text-anchor="middle" font-size="10" fill="#bbb">請求憑證</text>
 
     <!-- 後端 API -->
-    <rect x="170" y="64" width="150" height="70" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
-    <text x="245" y="86" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">後端 API Server</text>
-    <text x="245" y="102" text-anchor="middle" font-size="11" fill="#4060b0">驗證主播身份</text>
-    <text x="245" y="118" text-anchor="middle" font-size="11" fill="#4060b0">產生 Firebase Custom Token</text>
-    <text x="245" y="130" text-anchor="middle" font-size="10" fill="#8090c0">短效 5–10 分鐘 · 帶 uid</text>
+    <rect x="170" y="70" width="150" height="58" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
+    <text x="245" y="92" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">後端 API Server</text>
+    <text x="245" y="108" text-anchor="middle" font-size="11" fill="#4060b0">確認主播身份</text>
+    <text x="245" y="122" text-anchor="middle" font-size="11" fill="#4060b0">產生短效通行證</text>
 
-    <!-- → Moor APP 取得 token 後跳轉 -->
+    <!-- → 積分頁跳轉 -->
     <line x1="320" y1="99" x2="358" y2="99" stroke="#ccc" stroke-width="1.5" marker-end="url(#a0)"/>
     <text x="339" y="92" text-anchor="middle" font-size="10" fill="#bbb">跳轉</text>
 
     <!-- 積分頁 -->
-    <rect x="360" y="64" width="160" height="70" rx="6" fill="#fff8f0" stroke="#f0a060" stroke-width="1.5"/>
-    <text x="440" y="86" text-anchor="middle" font-size="12" font-weight="600" fill="#8b4a00">積分頁 /cpreward</text>
-    <text x="440" y="102" text-anchor="middle" font-size="11" fill="#c07030">URL 帶 token 參數</text>
-    <text x="440" y="118" text-anchor="middle" font-size="11" fill="#c07030">signInWithCustomToken(token)</text>
-    <text x="440" y="130" text-anchor="middle" font-size="10" fill="#e09050">token 用後即棄，不存本地</text>
+    <rect x="360" y="70" width="160" height="58" rx="6" fill="#fff8f0" stroke="#f0a060" stroke-width="1.5"/>
+    <text x="440" y="92" text-anchor="middle" font-size="12" font-weight="600" fill="#8b4a00">積分頁 /cpreward</text>
+    <text x="440" y="108" text-anchor="middle" font-size="11" fill="#c07030">驗證通行證</text>
+    <text x="440" y="122" text-anchor="middle" font-size="11" fill="#c07030">進入積分頁</text>
 
-    <!-- → Firebase Auth -->
+    <!-- → 已登入 -->
     <line x1="520" y1="99" x2="558" y2="99" stroke="#ccc" stroke-width="1.5" marker-end="url(#a0)"/>
-    <text x="539" y="92" text-anchor="middle" font-size="10" fill="#bbb">驗證</text>
+    <text x="539" y="92" text-anchor="middle" font-size="10" fill="#bbb">登入</text>
 
-    <!-- Firebase Auth -->
-    <rect x="560" y="64" width="200" height="70" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
-    <text x="660" y="86" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">Firebase Auth</text>
-    <text x="660" y="102" text-anchor="middle" font-size="11" fill="#3a8060">Session 建立（context.auth.uid）</text>
-    <text x="660" y="118" text-anchor="middle" font-size="11" fill="#3a8060">後續所有 Cloud Function 呼叫</text>
-    <text x="660" y="130" text-anchor="middle" font-size="10" fill="#7ab090">自動帶 auth · Firestore Rules 驗證身份</text>
+    <!-- 已登入狀態 -->
+    <rect x="560" y="70" width="200" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
+    <text x="660" y="92" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">已登入狀態</text>
+    <text x="660" y="108" text-anchor="middle" font-size="11" fill="#3a8060">主播身份確認完成</text>
+    <text x="660" y="122" text-anchor="middle" font-size="11" fill="#3a8060">後續操作以主播身份執行</text>
 
     <!-- 步驟標籤 -->
     <text x="70" y="148" text-anchor="middle" font-size="10" fill="#ccc">① 點擊連結</text>
-    <text x="245" y="148" text-anchor="middle" font-size="10" fill="#ccc">② 取得 Custom Token</text>
-    <text x="440" y="148" text-anchor="middle" font-size="10" fill="#ccc">③ 跳轉並登入</text>
-    <text x="660" y="148" text-anchor="middle" font-size="10" fill="#ccc">④ Session 建立，後續操作免重驗</text>
+    <text x="245" y="148" text-anchor="middle" font-size="10" fill="#ccc">② 取得通行證</text>
+    <text x="440" y="148" text-anchor="middle" font-size="10" fill="#ccc">③ 跳轉並驗證</text>
+    <text x="660" y="148" text-anchor="middle" font-size="10" fill="#ccc">④ 登入完成</text>
   </svg>
 </div>
 
@@ -141,7 +138,7 @@
 
   <!-- 流程一：積分累積 -->
   <div class="card">
-    <div class="card-title">流程一：積分累積（coupon_reward）</div>
+    <div class="card-title">流程一：積分累積</div>
     <svg viewBox="0 0 380 600" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <marker id="a1" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
@@ -177,11 +174,11 @@
       <line x1="190" y1="244" x2="190" y2="284" stroke="#ccc" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#a1)"/>
       <text x="196" y="269" font-size="10" fill="#bbb">定期同步</text>
 
-      <!-- cprewardCouponSync -->
+      <!-- 積分同步服務 -->
       <rect x="40" y="286" width="300" height="58" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
-      <text x="190" y="306" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">cprewardCouponSync</text>
-      <text x="190" y="322" text-anchor="middle" font-size="11" fill="#4060b0">排程 Cloud Function</text>
-      <text x="190" y="336" text-anchor="middle" font-size="11" fill="#8090c0">讀 BQ 增量 → 依 Config 計算積分 → 寫入</text>
+      <text x="190" y="306" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">積分同步服務</text>
+      <text x="190" y="322" text-anchor="middle" font-size="11" fill="#4060b0">排程執行</text>
+      <text x="190" y="336" text-anchor="middle" font-size="11" fill="#8090c0">讀取事件增量 → 依 Config 計算積分 → 寫入</text>
 
       <!-- Config 標示 -->
       <rect x="8" y="296" width="54" height="34" rx="4" fill="#fffff0" stroke="#c0a020" stroke-width="1.2"/>
@@ -196,18 +193,18 @@
       <!-- Firestore cpreward_accounts -->
       <rect x="55" y="386" width="270" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
       <text x="190" y="406" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">Firestore</text>
-      <text x="190" y="422" text-anchor="middle" font-size="11" fill="#3a8060">cpreward_accounts / transactions</text>
-      <text x="190" y="436" text-anchor="middle" font-size="10" fill="#7ab090">source: coupon_reward · earn transaction</text>
+      <text x="190" y="422" text-anchor="middle" font-size="11" fill="#3a8060">積分帳戶 / 交易紀錄</text>
+      <text x="190" y="436" text-anchor="middle" font-size="10" fill="#7ab090">來源：互動券 · 積分發放</text>
 
       <!-- ↓ cprewardGetData -->
       <line x1="190" y1="444" x2="190" y2="484" stroke="#ccc" stroke-width="1.5" marker-end="url(#a1)"/>
-      <text x="196" y="469" font-size="10" fill="#bbb">onCall 讀取</text>
+      <text x="196" y="469" font-size="10" fill="#bbb">API 查詢</text>
 
-      <!-- cprewardGetData -->
+      <!-- 積分查詢 API -->
       <rect x="75" y="486" width="230" height="46" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
-      <text x="190" y="504" text-anchor="middle" font-size="11" font-weight="600" fill="#1a3080">cprewardGetData</text>
-      <text x="190" y="519" text-anchor="middle" font-size="10" fill="#6070b0">Cloud Function · 整合帳戶 + 交易 + 商品</text>
-      <text x="190" y="530" text-anchor="middle" font-size="10" fill="#9060d0">context.auth.uid 驗證身份</text>
+      <text x="190" y="504" text-anchor="middle" font-size="11" font-weight="600" fill="#1a3080">積分查詢 API</text>
+      <text x="190" y="519" text-anchor="middle" font-size="10" fill="#6070b0">整合帳戶 + 交易紀錄 + 商品目錄</text>
+      <text x="190" y="530" text-anchor="middle" font-size="10" fill="#9060d0">驗證主播身份</text>
 
       <!-- ↓ Moor APP -->
       <line x1="190" y1="520" x2="190" y2="556" stroke="#ccc" stroke-width="1.5" marker-end="url(#a1)"/>
@@ -236,24 +233,24 @@
 
       <!-- ↓ -->
       <line x1="190" y1="48" x2="190" y2="84" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
-      <text x="196" y="71" font-size="10" fill="#bbb">onCall 呼叫</text>
+      <text x="196" y="71" font-size="10" fill="#bbb">API 呼叫</text>
 
-      <!-- cprewardRedeem -->
+      <!-- 兌換申請 API -->
       <rect x="40" y="86" width="300" height="84" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
-      <text x="190" y="106" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">cprewardRedeem</text>
-      <text x="190" y="122" text-anchor="middle" font-size="11" fill="#4060b0">Cloud Function</text>
+      <text x="190" y="106" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">兌換申請 API</text>
+      <text x="190" y="122" text-anchor="middle" font-size="11" fill="#4060b0">後端服務</text>
       <text x="190" y="138" text-anchor="middle" font-size="11" fill="#4060b0">驗證餘額 · FEFO 扣積分</text>
-      <text x="190" y="152" text-anchor="middle" font-size="10" fill="#8090c0">Firestore Transaction · 冪等保護</text>
-      <text x="190" y="164" text-anchor="middle" font-size="10" fill="#9060d0">context.auth.uid 驗證身份</text>
+      <text x="190" y="152" text-anchor="middle" font-size="10" fill="#8090c0">確保寫入完整性 · 防止重複扣分</text>
+      <text x="190" y="164" text-anchor="middle" font-size="10" fill="#9060d0">驗證主播身份</text>
 
-      <!-- ↓ Firestore Transaction -->
+      <!-- ↓ 原子寫入 -->
       <line x1="190" y1="170" x2="190" y2="206" stroke="#ccc" stroke-width="1.5" marker-end="url(#a2)"/>
-      <text x="196" y="193" font-size="10" fill="#bbb">Transaction</text>
+      <text x="196" y="193" font-size="10" fill="#bbb">寫入資料庫</text>
 
       <!-- Firestore -->
       <rect x="55" y="208" width="270" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
       <text x="190" y="228" text-anchor="middle" font-size="12" font-weight="600" fill="#1a6040">Firestore</text>
-      <text x="190" y="244" text-anchor="middle" font-size="11" fill="#3a8060">扣除積分 · 建立 cpreward_redemptions</text>
+      <text x="190" y="244" text-anchor="middle" font-size="11" fill="#3a8060">扣除積分 · 建立兌換申請紀錄</text>
       <text x="190" y="258" text-anchor="middle" font-size="10" fill="#7ab090">status: pending · 庫存 -1</text>
 
       <!-- ↓ 管理員審核 -->
@@ -262,7 +259,7 @@
 
       <!-- cprewardUpdateRedemption -->
       <rect x="40" y="304" width="300" height="46" rx="6" fill="#f0f4ff" stroke="#6080d0" stroke-width="1.5"/>
-      <text x="190" y="324" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">cprewardUpdateRedemption</text>
+      <text x="190" y="324" text-anchor="middle" font-size="12" font-weight="600" fill="#1a3080">審核處理 API</text>
       <text x="190" y="340" text-anchor="middle" font-size="11" fill="#4060b0">管理員 Approved / Rejected</text>
 
       <!-- fork -->
@@ -282,7 +279,7 @@
       <!-- Rejected 分支 -->
       <rect x="214" y="402" width="152" height="58" rx="6" fill="#f0fff4" stroke="#50a070" stroke-width="1.5"/>
       <text x="290" y="422" text-anchor="middle" font-size="11" font-weight="600" fill="#1a6040">自動退款</text>
-      <text x="290" y="438" text-anchor="middle" font-size="10" fill="#3a8060">redeem_refund earn 交易</text>
+      <text x="290" y="438" text-anchor="middle" font-size="10" fill="#3a8060">積分退還交易</text>
       <text x="290" y="452" text-anchor="middle" font-size="10" fill="#3a8060">FEFO · 已到期補 7 天緩衝</text>
 
       <!-- ↓ Firestore 更新 -->
